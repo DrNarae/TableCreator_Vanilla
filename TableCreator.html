@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>시간표</title>
+</head>
+<style>
+    body
+    {
+        background-color: antiquewhite;
+        font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #group_add
+    {
+        border-bottom: solid 1px black;
+    }
+
+    #controll
+    {
+        border: solid 1px black;
+        width: fit-content;
+        height: fit-content;
+    }
+
+    #week
+    {
+        width: fit-content;
+        height: fit-content;
+    }
+
+    #week > div
+    {
+        width: 40px;
+        height: 25px;
+        margin: 5px;
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        background-color: burlywood;
+        border: solid 1px black;
+    }
+    
+    #group_add > div
+    {
+        width: fit-content;
+        height: fit-content;
+        background-color: darksalmon;
+        border: solid 1px black;
+        margin-left: 5px;
+
+        display: inline-block;
+    }
+
+    #addDate
+    {
+        width: fit-content;
+        height: fit-content;
+        background-color: darksalmon;
+        border: solid 1px black;
+    }
+
+    #addCourse
+    {
+        width: fit-content;
+        height: fit-content;
+        background-color: darksalmon;
+        border: solid 1px black;
+    }
+
+    #calculate
+    {
+        width: fit-content;
+        height: fit-content;
+        background-color: darksalmon;
+        border: solid 1px black;
+    }
+
+    #reset
+    {
+        width: fit-content;
+        height: fit-content;
+        background-color: chocolate;
+        border: solid 1px black;
+    }
+
+    #setTimeMethod td
+    {
+        display: inline-block;
+        border-collapse: "0px";
+        border: solid 1px black;
+    }
+
+    #setTimeMethod td:nth-child(2)
+    {
+        background-color: tomato;
+    }
+
+    #setTimeMethod td:first-child
+    {
+        border: none;
+    }
+
+</style>
+<script>
+    let currentWeek = null;
+    let OptTableList = null;
+    let group = {};
+    let drawCount = 1;
+    const FONTSIZE = Math.round((screen.width * screen.height / 200000) + (screen.width / screen.height)) + "px";
+    const DEFAULTSIZE = [Math.round(screen.width / 24.5), Math.round(screen.height / 24.5)];
+
+    function loadStorage()
+    {
+        if (window.localStorage.getItem("group") !== null)
+        {
+            // 그룹 불러오기
+            group = JSON.parse(window.localStorage.getItem("group"));
+
+            let domparser = new DOMParser();
+            let group_view = domparser.parseFromString(window.localStorage.getItem("group_view"), "text/html").body.childNodes;
+
+            while (group_view.length > 0)
+            {
+                if (group_view[0].nodeName !== "BR")
+                {
+                    let values = Object.keys(group[group_view[0].id]).sort();
+                    let index = 0;
+
+                    while (group_view[0].firstElementChild.childNodes.length > 0)
+                    {
+                        if (index === 0)
+                        {
+                            group_view[0].firstElementChild.childNodes[0].lastElementChild.onclick = groupRemove;
+                        }
+                        else
+                        {
+                            group_view[0].firstElementChild.childNodes[0].childNodes[0].value = parseInt(values[index-1]);
+                            group_view[0].firstElementChild.childNodes[0].lastElementChild.onclick = courseRemove;
+                        }
+
+                        group_view[0].appendChild(group_view[0].firstElementChild.childNodes[0]);
+                        index++;
+                    }
+
+                    group_view[0].firstElementChild.remove();
+
+                    // select box
+                    let selectBox = document.getElementById("group_select");
+                    let option = document.createElement("option");
+                    option.value = group_view[0].id;
+                    option.innerText = group_view[0].id;
+
+                    document.getElementById("group").appendChild(group_view[0]);
+                    selectBox.appendChild(option);
+                }
+                else
+                {
+                    document.getElementById("group").appendChild(group_view[0]);
+                }
+            }
+
+
+            if (window.localStorage.getItem("result") !== null)
+            {
+                OptTableList = JSON.parse(window.localStorage.getItem("result"));
+                drawTable(OptTableList);
+            }
+        }
+
+    }
+
+    function init()
+    {
+        let createOpt = (i, dit=true) => {
+            let option = document.createElement("option");
+            option.value = i;
+            if (dit) 
+            {
+                option.innerText = i >= 10 ? i : "0"+i;
+            }
+            else
+            {
+                option.innerText = i;
+            }
+            return option
+        }
+
+        for (let i = 8; i < 24; i++)
+        {
+            let startHour = document.getElementById("startHour");
+            let endHour = document.getElementById("endHour");
+            startHour.appendChild(createOpt(i));
+            endHour.appendChild(createOpt(i));
+        }
+
+        for (let i = 0; i < 60; i++)
+        {
+            let startMin = document.getElementById("startMin");
+            let endMin = document.getElementById("endMin");
+            startMin.appendChild(createOpt(i));
+            endMin.appendChild(createOpt(i));
+        }
+
+        for (let i = 0; i < 16; i++)
+        {
+            document.getElementById("startPeriod").appendChild(createOpt(i, false));
+            document.getElementById("endPeriod").appendChild(createOpt(i, false));
+        }
+
+        loadStorage();
+    }
+
+    function createRow(n, cs=-1, txt=[""], width=-1, height=-1)
+    {
+        let tr = document.createElement("tr");
+        let txtIndex = 0;
+
+        for (let i = 0; i < n; i++)
+        {
+            let td = document.createElement("td");
+
+            if (n === 1 && cs !== -1) td.colSpan = cs;
+            if (width !== -1) td.style.width = width;
+            if (height !== -1) td.style.height = height;
+
+            td.style.textAlign = "center";
+            td.innerText = (txtIndex >= txt.length) ? "" : txt[txtIndex];
+
+            txtIndex++;
+
+            tr.appendChild(td);
+        }
+
+        return tr;
+    }
+
+    function groupAdd()
+    {
+        if (event.type === "keyup" && event.key !== "Enter") return;
+
+        let groupName = document.getElementById("group_add").firstElementChild;
+        let selectBox = document.getElementById("group_select");
+
+        if (group[groupName.value] != undefined)
+        {
+            alert("이미 추가한 그룹입니다.");
+            groupName.value = "";
+            return;
+        }
+
+        if (groupName.value === "")
+        {
+            for (let i = Object.keys(group).length+1; i < 999999; i++)
+            {
+                if (group[i+"번 그룹"] === undefined)
+                {
+                    document.getElementById("group_add").firstElementChild.value = i+"번 그룹";
+                    break;
+                }
+            }
+
+            if (document.getElementById("group_add").firstElementChild.value === "")
+            {
+                alert("그룹명을 명시해 주세요.");
+                return;
+            }
+
+            groupAdd();
+            return;
+        }
+        
+        let option = document.createElement("option");
+        let table = document.createElement("table");
+        let tr1 = document.createElement("tr");
+        let tr2 = document.createElement("tr");
+        let td1 = document.createElement("td");
+        let td2 = document.createElement("td");
+        let td3 = document.createElement("td");
+        let td4 = document.createElement("td");
+
+        option.value = groupName.value;
+        option.innerText = groupName.value;
+        td1.innerText = groupName.value;
+        td1.style.fontSize = Math.round(parseInt(FONTSIZE)*1.65) + "px";
+        td2.innerText = "그룹삭제";
+        td2.style.backgroundColor = "darksalmon";
+        td2.onclick = groupRemove;
+        td3.value = 0;
+        td3.style.border = "solid 1px black"
+        td4.innerText = "수업삭제";
+        td4.style.backgroundColor = "darksalmon";
+        td4.onclick = courseRemove;
+        tr1.appendChild(td1);
+        tr1.appendChild(td2);
+        tr2.appendChild(td3);
+        tr2.appendChild(td4);
+        table.id = groupName.value;
+        table.style.border = "solid 2px black";
+        table.appendChild(tr1);
+        table.appendChild(tr2);
+        selectBox.appendChild(option);
+        document.getElementById("group").appendChild(table);
+        document.getElementById("group").append(document.createElement("br"));
+
+        group[groupName.value] = {0:{}};
+        group[groupName.value][0]["starts"] = [];
+        group[groupName.value][0]["ends"] = [];
+        group[groupName.value][0]["weeks"] = [];
+        group[groupName.value][0]["locations"] = [];
+        group[groupName.value][0]["speakers"] = [];
+
+        window.localStorage.setItem("group", JSON.stringify(group));
+        window.localStorage.setItem("group_view", document.getElementById("group").innerHTML);
+        groupName.value = "";
+    }
+
+    function groupRemove()
+    {
+        let key = this.parentElement.firstElementChild.innerText;
+        delete group[key];
+
+        let box = document.getElementById("group_select");
+
+        for (let i = 0; i < box.length; i++)
+        {
+            if (box.children[i].innerText === key)
+            {
+                box.children[i].remove();
+                break;
+            }
+        }
+
+        this.parentElement.parentElement.nextSibling.remove();
+        this.parentElement.parentElement.remove();
+        window.localStorage.setItem("group", JSON.stringify(group));
+        window.localStorage.setItem("group_view", document.getElementById("group").innerHTML);
+    }
+
+    function courseRemove()
+    {
+        let key = this.parentElement.parentElement.id;
+        let index = this.parentElement.firstElementChild.value;
+        if (Object.keys(group[key]).length <= 1)
+        {
+            delete group[key][index];
+            group[key] = {0:{}};
+            group[key][0]["starts"] = [];
+            group[key][0]["ends"] = [];
+            group[key][0]["weeks"] = [];
+            group[key][0]["locations"] = [];
+            group[key][0]["speakers"] = [];
+            this.parentElement.firstElementChild.value = 0;
+            this.parentElement.firstElementChild.innerHTML = "";
+        }
+        else
+        {
+            delete group[key][index];
+            this.parentElement.remove();
+        }
+
+        window.localStorage.setItem("group", JSON.stringify(group));
+        window.localStorage.setItem("group_view", document.getElementById("group").innerHTML);
+    }
+
+    function setWeek(element)
+    {
+        if (currentWeek !== null)
+        {
+            currentWeek.style.backgroundColor = "burlywood";
+        }
+        element.style.backgroundColor = "red";
+        currentWeek = element;
+    }
+
+    function addTime()
+    {
+        if (event.type === "keyup" && event.key !== "Enter") return;
+
+        if (document.getElementById("group").childElementCount === 0)
+        {
+            alert("그룹을 추가하세요.");
+            return;
+        }
+
+        if (currentWeek === null)
+        {
+            alert("요일을 선택하세요.");
+            return;
+        }
+
+        let selectedGroup = document.getElementById("group_select").selectedOptions[0].innerText;
+        let table = document.getElementById(selectedGroup).lastElementChild.firstChild;
+        let timeMethod = document.getElementById("setStart").style.display === "block";
+        let startHour = "";
+        let startMin = "";
+        let endHour = "";
+        let endMin = "";
+        let location = document.getElementById("location").value;
+        let speaker = document.getElementById("speaker").value;
+        location = location === "" ? "<입력안함>" : location;
+        speaker = speaker === "" ? "<입력안함>" : speaker;
+
+        if (timeMethod)
+        {
+            startHour = document.getElementById("startHour").selectedOptions[0].innerText;
+            startMin = document.getElementById("startMin").selectedOptions[0].innerText;
+            endHour = document.getElementById("endHour").selectedOptions[0].innerText;
+            endMin = document.getElementById("endMin").selectedOptions[0].innerText;
+        }
+        else
+        {
+            startHour = digit(document.getElementById("startPeriod").selectedIndex + 8);
+            startMin = "00";
+            endHour = digit(document.getElementById("endPeriod").selectedIndex + 9);
+            endMin = "00";
+        }
+
+        if (startHour > endHour || (startHour === endHour && startMin >= endMin))
+        {
+            alert("종료시각이 더 커야 합니다.");
+            return;
+        }
+
+        group[selectedGroup][table.value]["starts"].push(startHour+":"+startMin);
+        group[selectedGroup][table.value]["ends"].push(endHour+":"+endMin);
+        group[selectedGroup][table.value]["weeks"].push(currentWeek.innerText);
+        group[selectedGroup][table.value]["locations"].push(location);
+        group[selectedGroup][table.value]["speakers"].push(speaker);
+
+        let courseInfo = document.createElement("p");
+        courseInfo.innerText = currentWeek.innerText + ", " + location + ", " + startHour + ":" + startMin + "~" + endHour + ":" + endMin + ", " + speaker;
+        table.appendChild(courseInfo);
+        // let info = currentWeek.innerText + ", " + location + ", " + startHour + ":" + startMin + "~" + endHour + ":" + endMin + ", " + speaker;
+        // table.innerHTML += (table.innerHTML !== "" ? "<br>" : "") + info;
+
+        window.localStorage.setItem("group", JSON.stringify(group));
+        window.localStorage.setItem("group_view", document.getElementById("group").innerHTML);
+    }
+
+    function addCourse()
+    {
+        if (Object.keys(group).length <= 0)
+        {
+            alert("그룹을 추가해주세요.");
+            return;
+        }
+
+        let selectedGroup = document.getElementById("group_select").selectedOptions[0].innerText;
+        let table = document.getElementById(selectedGroup);
+
+        if (table.lastElementChild.firstElementChild.innerHTML === "")
+        {
+            alert("과목 정보를 적용하지 않았습니다.");
+            return;
+        }
+
+        let index = parseInt(table.lastElementChild.firstElementChild.value)+1;
+        group[selectedGroup][index] = {};
+        group[selectedGroup][index]["starts"] = [];
+        group[selectedGroup][index]["ends"] = [];
+        group[selectedGroup][index]["weeks"] = [];
+        group[selectedGroup][index]["locations"] = [];
+        group[selectedGroup][index]["speakers"] = [];
+
+        let tr = document.createElement("tr");
+        let td1 = document.createElement("td");
+        let td2 = document.createElement("td");
+
+        td1.innerText = "";
+        td1.value = index;
+        td1.style.border = "solid 1px black";
+        td2.innerText = "수업삭제";
+        td2.style.backgroundColor = "darksalmon";
+        td2.onclick = courseRemove;
+
+        tr.appendChild(td1);
+        tr.appendChild(td2);
+        table.appendChild(tr);
+        
+        window.localStorage.setItem("group", JSON.stringify(group));
+        window.localStorage.setItem("group_view", document.getElementById("group").innerHTML);
+    }
+
+    function digit(n)
+    {
+        return (n >= 10 ? n+"" : "0"+n);
+    }
+
+    function combine(t)
+    {
+        // t : [{과목정보1}, {과목정보2}, . . . {과목정보N}]
+
+        let schedule = {};
+
+        for (let i = 0; i < t.length; i++)
+        {
+            for (let j = 0; j < t[i]["starts"].length; j++)
+            {
+                let week = t[i]["weeks"][j];
+                let startHour = parseInt(t[i]["starts"][j].slice(0, 2));
+                let startMin = parseInt(t[i]["starts"][j].slice(3, 5));
+                let endHour = parseInt(t[i]["ends"][j].slice(0, 2));
+                let endMin = parseInt(t[i]["ends"][j].slice(3, 5));
+
+                // 스케쥴 검사
+                if (schedule[week] === undefined)
+                {
+                    schedule[week] = [];
+                    for (let k = 0; k < 1440; k++) schedule[week].push(false);
+
+                    let startTime = startHour*60+startMin;
+                    let endTime = endHour*60+endMin;
+                    for (let k = startTime; k < endTime; k++) schedule[week][k] = true;
+                }
+                else
+                {
+                    // 시간 겹치는지 검사
+                    let startTime = startHour*60+startMin;
+                    let endTime = endHour*60+endMin;
+                    for (let k = startTime; k < endTime; k++)
+                    {
+                        if (schedule[week][k]) return false;
+                        schedule[week][k] = true;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
+    function calculate()
+    {
+        // 각 경우의 수
+        if (Object.keys(group) <= 0)
+        {
+            alert("그룹을 추가해주세요.");
+            return false;
+        }
+
+        let cert = true;
+        let pass = [];
+        let cases = 1;
+        Object.keys(group).forEach(item => {
+            if (document.getElementById(item).lastElementChild.firstElementChild.innerHTML === "") cert = false;
+            cases *= Object.keys(group[item]).length;
+        });
+
+        if (!cert)
+        {
+            alert("빈 수업이 있습니다.");
+            return false;
+        }
+
+        if (confirm("계산 횟수는 " + cases + "번 입니다.\n\n계속하시겠습니까?"))
+        {
+            let groupTag = [];
+            let groupList = [];
+            let counting = [];
+            Object.keys(group).forEach(item => {
+                let temp = [];
+                Object.keys(group[item]).forEach(value => {
+                    temp.push(group[item][value]);
+                });
+                groupTag.push(item);
+                groupList.push(temp);
+                counting.push(0);
+            });
+
+            while (counting[0] !== -1)
+            {
+                let sample = [];
+
+                for (let i = 0; i < groupList.length; i++) sample.push(groupList[i][counting[i]]);
+
+                if (combine(sample))
+                {
+                    // 사용 가능한 시간표
+                    pass.push(sample);
+                }
+
+                counting[counting.length-1] += 1;
+
+                for (let i = counting.length-1; i >= 0; i--)
+                {
+                    if (counting[i] >= groupList[i].length)
+                    {
+                        counting[i] = 0;
+                        if (i > 0) counting[i-1] += 1;
+                        else counting[0] = -1;
+                    }
+                }
+            }
+
+            // 결과 반영
+            if (pass.length > 0)
+            {
+                OptTableList = pass;
+                window.localStorage.setItem("courses", JSON.stringify(groupTag));
+                window.localStorage.setItem("result", JSON.stringify(pass));
+                drawTable(pass);
+            }
+            else
+            {
+                alert("만들 수 있는 시간표가 존재하지 않습니다.\n입력한 수업의 시간을 다시 한번 확인해주세요.");
+            }
+        }
+    }
+
+    function drawTable(t)
+    {
+        let timeLine = () => {
+            let table = document.createElement("table");
+            for (let i = 0; i < 14; i++)
+            {
+                let tr = document.createElement("tr");
+                let td = document.createElement("td");
+                td.innerHTML = i + "교시<br>" + digit(8+i) + ":00 ~ " + digit(9+i) + ":00";
+                td.style.fontSize = FONTSIZE; // 쿼리 ok
+                td.style.width = DEFAULTSIZE[0] + "px"; // 쿼리 ok
+                td.style.height = DEFAULTSIZE[1] + "px"; // 쿼리 ok
+                td.style.textAlign = "center";
+                tr.appendChild(td);
+                table.appendChild(tr);
+            }
+            table.border = 1;
+            table.style.display = "inline-block";
+            return table;
+        };
+
+        let div = (txt1, txt2) => {
+            let div = document.createElement("div");
+            let p1 = document.createElement("p");
+            let p2 = document.createElement("p");
+            p1.innerHTML = txt1;
+            p1.style.fontSize = Math.round(parseInt(FONTSIZE) / 1.3) + "px";
+            p1.style.display = "inline";
+            p2.innerHTML = txt2;
+            p2.style.fontSize = FONTSIZE;
+            p2.style.display = "none";
+            p2.style.textAlign = "left";
+            p2.style.margin = "3px";
+            div.style.width = "100%";
+            div.style.height = "100%";
+            div.append(p1);
+            div.append(p2);
+            return div;
+        };
+
+        let space = () => {
+            let details = document.createElement("details");
+            let summary = document.createElement("summary");
+            let table = document.createElement("table");
+            let tr1 = createRow(7, -1, ["월", "화", "수", "목", "금", "토", "일"], DEFAULTSIZE[0] + "px", DEFAULTSIZE[1] + "px"); // 쿼리 ok
+            table.border = 1;
+            table.style.display = "inline-block";
+            table.appendChild(tr1);
+            for (let i = 0; i < 14; i++) table.appendChild(createRow(7, -1, [""], DEFAULTSIZE[0] + "px", DEFAULTSIZE[1] + "px")); // 쿼리 ok
+            summary.innerText = drawCount + "번 시간표";
+            details.appendChild(summary);
+            details.appendChild(timeLine());
+            details.appendChild(table);
+            return details;
+        };
+
+        let weekCode = {"월":0, "화":1, "수":2, "목":3, "금":4, "토":5, "일":6};
+        let nameList = JSON.parse(window.localStorage.getItem("courses"));
+        let colorList = {};
+        nameList.forEach(name => {
+            colorList[name] = Math.floor(Math.random()*256) + "," + Math.floor(Math.random()*256) + "," + Math.floor(Math.random()*256);
+        });
+
+        t.forEach(table => {
+            let optimizeTable = space();
+            let index = 0;
+            table.forEach(course => {
+                let courseName = nameList[index];
+                let starts = course["starts"];
+                let ends = course["ends"];
+                let weeks = course["weeks"];
+                let speakers = course["speakers"];
+                let locations = course["locations"];
+                let color = colorList[courseName];
+
+                for (let i = 0; i < starts.length; i++)
+                {
+                    let startHour = parseInt(starts[i].slice(0, 2));
+                    let startMin = parseInt(starts[i].slice(3, 5));
+                    let endHour = parseInt(ends[i].slice(0, 2));
+                    let endMin = parseInt(ends[i].slice(3, 5));
+                    let week = weekCode[weeks[i]];
+                    let speaker = speakers[i];
+                    let location = locations[i];
+                    let loopCount = (endHour - startHour) + ((endMin > 0) ? 1:0);
+
+                    for (let j = 0; j < loopCount; j++)
+                    {
+                        let chart = optimizeTable.lastElementChild.children.item(startHour+j-6).children.item(week);
+                        let partialDiv = null;
+                        // <div> <p>과목이름</p> <p>세부사항</p> </div>
+
+                        if (j === 0)
+                        {
+                            partialDiv = div(courseName, courseName + "<br>" + speaker + "<br>" + location);
+                            partialDiv.style.position = "relative";
+                            if ((100/60*startMin)/2 > 0) partialDiv.style.top = (100/60*startMin)/2 + "%";
+                        }
+                        else if (j === loopCount-1)
+                        {
+                            partialDiv = div('', courseName + "<br>" + speaker + "<br>" + location);
+                            partialDiv.style.position = "relative";
+                            if ((100/60*endMin)/2 > 0) partialDiv.style.bottom = (100/60*endMin)/2 + "%";
+                        }
+                        else
+                        {
+                            partialDiv = div('', courseName + "<br>" + speaker + "<br>" + location);
+                        }
+                        
+                        partialDiv.style.zIndex = 0;
+                        partialDiv.onclick = courseDeatil;
+                        partialDiv.onmouseover = courseDeatil;
+                        partialDiv.onmouseout = courseDeatil;
+                        partialDiv.style.backgroundColor = "rgb(" + color + ")";
+
+                        chart.appendChild(partialDiv);
+                    }
+                }
+
+                index++;
+            });
+            document.getElementById("result").appendChild(optimizeTable);
+            drawCount++;
+        });
+    }
+
+    function courseDeatil()
+    {
+        // 0. 마우스포인터를 올렸다.
+        // 1. 초기 값을 받음.
+        // 2. 마우스 올린 요소 크기가 2배가 될때까지 Interval
+        // 3. 중간에 out되면 현재 Interval은 clearInterval
+
+        // 0. 마우스포인터를 뺐다.
+        // 1. 초기 값 받음
+        // 2. 마우스 올린 요소 크기가 원래대로 될때까지 Interval
+        // 3. 중간에 over되면 현재 Interval은 clearInterval
+        
+        const DIV = this;
+
+        if (event.type === "mouseover" && DIV.style.zIndex === "0")
+        {
+            // interval 전에 적용 할 것들
+            if (this.value !== undefined) clearInterval(this.value);
+            DIV.style.width = DIV.style.width === "100%" ? DEFAULTSIZE[0] + "px" : DIV.style.width;
+            DIV.style.height = DIV.style.height === "100%" ? DEFAULTSIZE[1] + "px" : DIV.style.height;
+            DIV.style.left = window.pageXOffset + DIV.getBoundingClientRect().x + "px";
+            DIV.style.top = window.pageYOffset + DIV.getBoundingClientRect().y + "px";
+            DIV.style.position = "absolute";
+            DIV.style.zIndex = 10;
+
+            // interval 중에 적용 할 것들
+            // height먼저 늘어난 후 width 늘어남.
+            DIV.value = setInterval(() => {
+                if (parseInt(DIV.style.height) < DEFAULTSIZE[1]*2)
+                {
+                    DIV.style.height = (parseInt(DIV.style.height) + 1) + "px";
+                }
+                else if (parseInt(DIV.style.width) < DEFAULTSIZE[0]*2)
+                {
+                    DIV.style.width = (parseInt(DIV.style.width) + 1) + "px";
+                }
+                else 
+                {
+                    // interval 끝날 시 적용 할 것들
+                    clearInterval(DIV.value);
+                    DIV.firstElementChild.style.display = "none";
+                    DIV.lastElementChild.style.display = "inline";
+                    this.value = undefined;
+                }
+            }, 0);
+        }
+        else if (event.type === "mouseout" && DIV.style.zIndex === "10")
+        {
+            // interval 전에 적용 할 것들
+            if (this.value !== undefined) clearInterval(this.value);
+            DIV.firstElementChild.style.display = "inline";
+            DIV.lastElementChild.style.display = "none";
+            DIV.style.zIndex = 0;
+            
+            // interval 중에 적용 할 것들
+            DIV.value = setInterval(() => {
+                if (parseInt(DIV.style.height) > DEFAULTSIZE[1])
+                {
+                    DIV.style.height = (parseInt(DIV.style.height) - 1) + "px";
+                }
+                else if (parseInt(DIV.style.width) > DEFAULTSIZE[0])
+                {
+                    DIV.style.width = (parseInt(DIV.style.width) - 1) + "px";
+                }
+                else
+                {
+                    // interval 끝날 시 적용 할 것들
+                    clearInterval(this.value);
+                    DIV.style.width = "100%";
+                    DIV.style.height = "100%";
+                    DIV.style.left = "0px";
+                    DIV.style.top = "0px";
+                    DIV.style.position = "relative";
+                }
+            }, 1);
+        }
+        else if (event.type === "click" && DIV.style.zIndex === "10")
+        {
+            if (DIV.onmouseover !== null)
+            {
+                DIV.onmouseover = null;
+                DIV.onmouseout = null;
+            }
+            else
+            {
+                DIV.onmouseover = courseDeatil;
+                DIV.onmouseout = courseDeatil;
+            }
+        }
+
+    }
+
+    function reset()
+    {
+        if (prompt('초기화를 진행하시겠습니까?\n초기화를 진행하면 저장된 정보들이 모두 삭제됩니다.\n초기화를 진행하시려면 아래 빈 칸에 "초기화"라고 입력해주세요.') === "초기화")
+        {
+            window.localStorage.clear();
+            location.reload();
+        }
+    }
+
+    function setTimeMethod(c)
+    {
+        let time = [document.getElementById("setStart"), document.getElementById("setEnd")];
+        let period = document.getElementById("setPeriod");
+        if (c)
+        {
+            document.getElementById("setTimeMethod").firstElementChild.firstElementChild.firstElementChild.nextElementSibling.style.backgroundColor = "tomato";
+            document.getElementById("setTimeMethod").firstElementChild.firstElementChild.lastElementChild.style.backgroundColor = "antiquewhite";
+            time[0].style.display = "block";
+            time[1].style.display = "block";
+            period.style.display = "none";
+        }
+        else
+        {
+            document.getElementById("setTimeMethod").firstElementChild.firstElementChild.firstElementChild.nextElementSibling.style.backgroundColor = "antiquewhite";
+            document.getElementById("setTimeMethod").firstElementChild.firstElementChild.lastElementChild.style.backgroundColor = "tomato";
+            time[0].style.display = "none";
+            time[1].style.display = "none";
+            period.style.display = "block";
+        }
+    }
+
+</script>
+<body onload="init()">
+    <div id="main">
+        <div id="result"></div>
+        <br>
+        <div id="group"></div>
+        <div id="controll">
+            <div id="group_add">
+                <input type="text" placeholder="과목명" onkeyup="groupAdd()">
+                <div onclick="groupAdd()">그룹추가</div>
+            </div>
+            <br>
+            그룹선택 : <select name="" id="group_select"></select>
+            <div id="week">
+                <div id="mon" onclick="setWeek(this)">월</div>
+                <div id="tue" onclick="setWeek(this)">화</div>
+                <div id="wed" onclick="setWeek(this)">수</div>
+                <div id="thu" onclick="setWeek(this)">목</div>
+                <div id="fri" onclick="setWeek(this)">금</div>
+                <div id="sat" onclick="setWeek(this)">토</div>
+                <div id="sun" onclick="setWeek(this)">일</div>
+            </div>
+            <div id="time">
+                <table id="setTimeMethod">
+                    <tr>
+                        <td>시간 단위 :&nbsp;</td>
+                        <td onclick="setTimeMethod(true)">시각</td>
+                        <td onclick="setTimeMethod(false)">교시</td>
+                    </tr>
+                </table>
+                <div id="setStart" style="display: block;">
+                    시작시각 : <select name="" id="startHour"></select>시
+                    <select name="" id="startMin"></select>분
+                </div>
+                <div id="setEnd">
+                    종료시각 : <select name="" id="endHour"></select>시
+                    <select name="" id="endMin"></select>분
+                </div>
+                <div id="setPeriod" style="display: none;">
+                    <select name="" id="startPeriod"></select>교시 ~
+                    <select name="" id="endPeriod"></select>교시
+                </div>
+            </div>
+            <input type="text" placeholder="강의실 위치" id="location"><br>
+            <input type="text" placeholder="강사명" id="speaker" onkeyup="addTime()">
+            <div id="addDate" onclick="addTime()">시간삽입</div>
+            <br>
+            <div id="addCourse" onclick="addCourse()">수업추가</div>
+        </div>
+        <br>
+        <div id="calculate" onclick="calculate()">시간표 계산 및 출력</div>
+        <div id="reset" onclick="reset()">초기화</div>
+        <div style="position:absolute; width: 90%; height: 50%;"></div>
+    </div>
+</body>
+</html>
